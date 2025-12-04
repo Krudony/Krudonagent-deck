@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,4 +81,51 @@ func (lw *LogWatcher) Start() {
 func (lw *LogWatcher) Close() error {
 	close(lw.done)
 	return lw.watcher.Close()
+}
+
+// RotateLog truncates a session's log file if it exceeds maxSize
+func RotateLog(sessionName string, maxSize int64) error {
+	logFile := filepath.Join(LogDir(), sessionName+".log")
+
+	info, err := os.Stat(logFile)
+	if err != nil {
+		return nil // File doesn't exist, nothing to rotate
+	}
+
+	if info.Size() > maxSize {
+		// Truncate file (keep last 10KB)
+		f, err := os.OpenFile(logFile, os.O_RDWR, 0644)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		keepSize := int64(10 * 1024)
+		if info.Size() > keepSize {
+			// Seek to position keepSize bytes from end
+			_, err = f.Seek(-keepSize, io.SeekEnd)
+			if err != nil {
+				return err
+			}
+
+			// Read the tail
+			tail := make([]byte, keepSize)
+			n, err := f.Read(tail)
+			if err != nil && err != io.EOF {
+				return err
+			}
+
+			// Truncate and write tail at beginning
+			if err := f.Truncate(0); err != nil {
+				return err
+			}
+			if _, err := f.Seek(0, io.SeekStart); err != nil {
+				return err
+			}
+			if _, err := f.Write(tail[:n]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
