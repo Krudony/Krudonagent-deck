@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
 )
 
 // ClaudeProject represents a project entry in Claude's config
@@ -36,11 +39,20 @@ func GetClaudeConfigDir() string {
 	return filepath.Join(home, ".claude")
 }
 
-// GetClaudeSessionID returns the last session ID for a project path
+// GetClaudeSessionID returns the ACTIVE session ID for a project path
+// It first tries to find the currently running session by checking recently
+// modified .jsonl files, then falls back to lastSessionId from config
 func GetClaudeSessionID(projectPath string) (string, error) {
 	configDir := GetClaudeConfigDir()
-	configFile := filepath.Join(configDir, ".claude.json")
 
+	// First, try to find active session from recently modified files
+	activeID := findActiveSessionID(configDir, projectPath)
+	if activeID != "" {
+		return activeID, nil
+	}
+
+	// Fall back to lastSessionId from config
+	configFile := filepath.Join(configDir, ".claude.json")
 	data, err := os.ReadFile(configFile)
 	if err != nil {
 		return "", fmt.Errorf("failed to read Claude config: %w", err)
@@ -59,4 +71,62 @@ func GetClaudeSessionID(projectPath string) (string, error) {
 	}
 
 	return "", fmt.Errorf("no session found for project: %s", projectPath)
+}
+
+// findActiveSessionID looks for the most recently modified session file
+// This finds the CURRENTLY RUNNING session, not the last completed one
+func findActiveSessionID(configDir, projectPath string) string {
+	// Convert project path to Claude's directory format
+	// /Users/ashesh/claude-deck -> -Users-ashesh-claude-deck
+	projectDirName := strings.ReplaceAll(projectPath, "/", "-")
+	projectDir := filepath.Join(configDir, "projects", projectDirName)
+
+	// Check if project directory exists
+	if _, err := os.Stat(projectDir); os.IsNotExist(err) {
+		return ""
+	}
+
+	// Find session files (UUID format, not agent-* files)
+	files, err := filepath.Glob(filepath.Join(projectDir, "*.jsonl"))
+	if err != nil || len(files) == 0 {
+		return ""
+	}
+
+	// UUID pattern for session files
+	uuidPattern := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$`)
+
+	var mostRecent string
+	var mostRecentTime time.Time
+
+	for _, file := range files {
+		base := filepath.Base(file)
+
+		// Skip agent files (agent-*.jsonl)
+		if strings.HasPrefix(base, "agent-") {
+			continue
+		}
+
+		// Only consider UUID-named files
+		if !uuidPattern.MatchString(base) {
+			continue
+		}
+
+		info, err := os.Stat(file)
+		if err != nil {
+			continue
+		}
+
+		// Find the most recently modified file
+		if info.ModTime().After(mostRecentTime) {
+			mostRecentTime = info.ModTime()
+			mostRecent = strings.TrimSuffix(base, ".jsonl")
+		}
+	}
+
+	// Only return if modified within last 5 minutes (actively used)
+	if mostRecent != "" && time.Since(mostRecentTime) < 5*time.Minute {
+		return mostRecent
+	}
+
+	return ""
 }

@@ -130,6 +130,11 @@ func (i *Instance) UpdateStatus() error {
 		i.Status = StatusError
 	}
 
+	// Update tool detection dynamically (enables fork when Claude starts)
+	if detectedTool := i.tmuxSession.DetectTool(); detectedTool != "" {
+		i.Tool = detectedTool
+	}
+
 	// Update Claude session tracking (non-blocking, best-effort)
 	i.UpdateClaudeSession()
 
@@ -266,8 +271,11 @@ func (i *Instance) Fork(newTitle, newGroupPath string) (string, error) {
 		return "", fmt.Errorf("cannot fork: no active Claude session")
 	}
 
-	// Build the fork command
-	cmd := fmt.Sprintf("claude --resume %s --fork-session", i.ClaudeSessionID)
+	// Build the fork command with the correct Claude profile
+	// This ensures fork uses the same profile where the session ID was detected
+	// Uses --dangerously-skip-permissions to match typical cdw workflow
+	configDir := GetClaudeConfigDir()
+	cmd := fmt.Sprintf("CLAUDE_CONFIG_DIR=%s claude --dangerously-skip-permissions --resume %s --fork-session", configDir, i.ClaudeSessionID)
 
 	return cmd, nil
 }

@@ -2,6 +2,7 @@ package session
 
 import (
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 )
@@ -108,9 +109,12 @@ func TestInstance_Fork(t *testing.T) {
 		t.Errorf("Fork() failed: %v", err)
 	}
 
-	expected := "claude --resume abc-123 --fork-session"
-	if cmd != expected {
-		t.Errorf("Fork() = %s, want %s", cmd, expected)
+	// Command should include CLAUDE_CONFIG_DIR and the session ID
+	if !strings.Contains(cmd, "CLAUDE_CONFIG_DIR=") {
+		t.Errorf("Fork() should set CLAUDE_CONFIG_DIR, got: %s", cmd)
+	}
+	if !strings.Contains(cmd, "--resume abc-123 --fork-session") {
+		t.Errorf("Fork() should include resume and fork flags, got: %s", cmd)
 	}
 }
 
@@ -133,10 +137,12 @@ func TestInstance_CreateForkedInstance(t *testing.T) {
 		t.Errorf("CreateForkedInstance() failed: %v", err)
 	}
 
-	// Verify command is correct
-	expectedCmd := "claude --resume abc-123 --fork-session"
-	if cmd != expectedCmd {
-		t.Errorf("Command = %s, want %s", cmd, expectedCmd)
+	// Verify command includes config dir and fork flags
+	if !strings.Contains(cmd, "CLAUDE_CONFIG_DIR=") {
+		t.Errorf("Command should set CLAUDE_CONFIG_DIR, got: %s", cmd)
+	}
+	if !strings.Contains(cmd, "--resume abc-123 --fork-session") {
+		t.Errorf("Command should include resume and fork flags, got: %s", cmd)
 	}
 
 	// Verify forked instance has correct properties
@@ -149,8 +155,8 @@ func TestInstance_CreateForkedInstance(t *testing.T) {
 	if forked.GroupPath != "projects" {
 		t.Errorf("Forked group = %s, want projects (inherited)", forked.GroupPath)
 	}
-	if forked.Command != expectedCmd {
-		t.Errorf("Forked command = %s, want %s", forked.Command, expectedCmd)
+	if !strings.Contains(forked.Command, "--resume abc-123 --fork-session") {
+		t.Errorf("Forked command should include fork flags, got: %s", forked.Command)
 	}
 	if forked.Tool != "claude" {
 		t.Errorf("Forked tool = %s, want claude", forked.Tool)
