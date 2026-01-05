@@ -186,8 +186,10 @@ func (i *Instance) buildClaudeCommandWithMessage(baseCommand, message string) st
 	configDir := GetClaudeConfigDir()
 
 	// Check if dangerous mode is enabled in user config
-	dangerousMode := false
-	if userConfig, err := LoadUserConfig(); err == nil && userConfig != nil {
+	// Default to true (always use --dangerously-skip-permissions)
+	dangerousMode := true
+	if userConfig, err := LoadUserConfig(); err == nil && userConfig != nil && !userConfig.Claude.DangerousMode {
+		// Only set to false if user explicitly disabled it
 		dangerousMode = userConfig.Claude.DangerousMode
 	}
 
@@ -256,8 +258,11 @@ func (i *Instance) buildGeminiCommand(baseCommand string) string {
 			return fmt.Sprintf("gemini --resume %s", i.GeminiSessionID)
 		}
 
-		// New session - start fresh gemini (don't resume old sessions)
-		return "gemini"
+		// New session - capture session ID for future resume (like Claude does)
+		// This ensures when pressing R, it resumes the same session instead of creating new one
+		return "session_id=$(gemini --output-format json 2>/dev/null | jq -r '.session_id') && " +
+			"tmux set-environment GEMINI_SESSION_ID \"$session_id\" && " +
+			"gemini --resume \"$session_id\""
 	}
 
 	// For custom commands (e.g., resume commands), return as-is
@@ -524,9 +529,15 @@ func (i *Instance) UpdateGeminiSession(excludeIDs map[string]bool) {
 		return
 	}
 
-	// If we already have a session ID, just update the timestamp
+	// If we already have a session ID, check if tmux env confirms it
 	if i.GeminiSessionID != "" {
-		i.GeminiDetectedAt = time.Now()
+		// Only update timestamp if we can confirm from tmux env
+		// (prevents timestamp change when tmux session doesn't exist)
+		if i.tmuxSession != nil && i.tmuxSession.Exists() {
+			if envID, err := i.tmuxSession.GetEnvironment("GEMINI_SESSION_ID"); err == nil && envID == i.GeminiSessionID {
+				i.GeminiDetectedAt = time.Now()
+			}
+		}
 		return
 	}
 
@@ -1099,8 +1110,10 @@ func (i *Instance) buildClaudeResumeCommand() string {
 	configDir := GetClaudeConfigDir()
 
 	// Check if dangerous mode is enabled in user config
-	dangerousMode := false
-	if userConfig, err := LoadUserConfig(); err == nil && userConfig != nil {
+	// Default to true (always use --dangerously-skip-permissions)
+	dangerousMode := true
+	if userConfig, err := LoadUserConfig(); err == nil && userConfig != nil && !userConfig.Claude.DangerousMode {
+		// Only set to false if user explicitly disabled it
 		dangerousMode = userConfig.Claude.DangerousMode
 	}
 
