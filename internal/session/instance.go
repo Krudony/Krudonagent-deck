@@ -241,11 +241,9 @@ func (i *Instance) buildClaudeCommandWithMessage(baseCommand, message string) st
 	return baseCommand
 }
 
-// buildGeminiCommand builds the gemini command with session capture
-// For new sessions: captures session ID via stream-json, stores in tmux env, then resumes
-// For sessions with known ID: uses simple resume
-// This ensures we always know the session ID for restart features
-// VERIFIED: gemini --output-format stream-json provides immediate session ID in first message
+// buildGeminiCommand builds the gemini command
+// For sessions with known ID: uses --resume to continue that session
+// For new sessions: starts fresh gemini (creates new session)
 func (i *Instance) buildGeminiCommand(baseCommand string) string {
 	if i.Tool != "gemini" {
 		return baseCommand
@@ -253,20 +251,12 @@ func (i *Instance) buildGeminiCommand(baseCommand string) string {
 
 	// If baseCommand is just "gemini", handle specially
 	if baseCommand == "gemini" {
-		// If we already have a session ID, use simple resume
+		// If we already have a session ID, resume it
 		if i.GeminiSessionID != "" {
 			return fmt.Sprintf("gemini --resume %s", i.GeminiSessionID)
 		}
 
-		// Try to find the most recent session from files
-		sessions, err := ListGeminiSessions(i.ProjectPath)
-		if err == nil && len(sessions) > 0 {
-			// Found existing session, resume it
-			i.GeminiSessionID = sessions[0].SessionID
-			return fmt.Sprintf("gemini --resume %s", sessions[0].SessionID)
-		}
-
-		// No existing session, run gemini to create new one
+		// New session - start fresh gemini (don't resume old sessions)
 		return "gemini"
 	}
 
@@ -527,20 +517,34 @@ func (i *Instance) UpdateClaudeSession(excludeIDs map[string]bool) {
 // The capture-resume pattern (used in Start/Restart) sets GEMINI_SESSION_ID
 // in the tmux environment, making this the single authoritative source.
 //
-// No file scanning fallback - we rely on the consistent capture-resume pattern.
+// UpdateGeminiSession detects the Gemini session ID from files.
+// Scans ~/.gemini/tmp/<hash>/chats/ for the most recent session file.
 func (i *Instance) UpdateGeminiSession(excludeIDs map[string]bool) {
 	if i.Tool != "gemini" {
 		return
 	}
 
-	// Read from tmux environment (set by capture-resume pattern)
-	if i.tmuxSession != nil {
-		if sessionID, err := i.tmuxSession.GetEnvironment("GEMINI_SESSION_ID"); err == nil && sessionID != "" {
-			if i.GeminiSessionID != sessionID {
-				i.GeminiSessionID = sessionID
-			}
-			i.GeminiDetectedAt = time.Now()
+	// If we already have a session ID, just update the timestamp
+	if i.GeminiSessionID != "" {
+		i.GeminiDetectedAt = time.Now()
+		return
+	}
+
+	// Scan for most recent session from files
+	sessions, err := ListGeminiSessions(i.ProjectPath)
+	if err != nil || len(sessions) == 0 {
+		return
+	}
+
+	// Use the most recent session (already sorted by LastUpdated)
+	for _, sess := range sessions {
+		// Skip excluded IDs
+		if excludeIDs != nil && excludeIDs[sess.SessionID] {
+			continue
 		}
+		i.GeminiSessionID = sess.SessionID
+		i.GeminiDetectedAt = time.Now()
+		return
 	}
 }
 
@@ -990,17 +994,32 @@ func (i *Instance) Kill() error {
 	return nil
 }
 
-// Restart restarts the Claude session
-// For Claude sessions with known ID: sends Ctrl+C twice and resume command to existing session
+// Restart restarts the session
+// For Claude/Gemini sessions with known ID: uses respawn-pane with resume command
 // For dead sessions or unknown ID: recreates the tmux session
 func (i *Instance) Restart() error {
-	log.Printf("[MCP-DEBUG] Instance.Restart() called - Tool=%s, ClaudeSessionID=%q, tmuxSession=%v, tmuxExists=%v",
-		i.Tool, i.ClaudeSessionID, i.tmuxSession != nil, i.tmuxSession != nil && i.tmuxSession.Exists())
+	log.Printf("[MCP-DEBUG] Instance.Restart() called - Tool=%s, ClaudeSessionID=%q, GeminiSessionID=%q, tmuxSession=%v, tmuxExists=%v",
+		i.Tool, i.ClaudeSessionID, i.GeminiSessionID, i.tmuxSession != nil, i.tmuxSession != nil && i.tmuxSession.Exists())
 
 	// Regenerate .mcp.json before restart to use socket pool if available
 	// This ensures Claude picks up socket configs instead of stdio
 	if i.Tool == "claude" {
 		i.regenerateMCPConfig()
+	}
+
+	// If Gemini session with known ID AND tmux session exists, use respawn-pane
+	if i.Tool == "gemini" && i.GeminiSessionID != "" && i.tmuxSession != nil && i.tmuxSession.Exists() {
+		resumeCmd := fmt.Sprintf("gemini --resume %s", i.GeminiSessionID)
+		log.Printf("[MCP-DEBUG] Gemini respawn-pane with command: %s", resumeCmd)
+
+		if err := i.tmuxSession.RespawnPane(resumeCmd); err != nil {
+			log.Printf("[MCP-DEBUG] Gemini RespawnPane failed: %v", err)
+			return fmt.Errorf("failed to restart Gemini session: %w", err)
+		}
+
+		log.Printf("[MCP-DEBUG] Gemini RespawnPane succeeded")
+		i.Status = StatusWaiting
+		return nil
 	}
 
 	// If Claude session with known ID AND tmux session exists, use respawn-pane
