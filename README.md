@@ -219,7 +219,10 @@ Works with Claude Code, Gemini CLI, OpenCode, Codex, Cursor, and any terminal to
 **Works on:** macOS • Linux • Windows (WSL)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/asheshgoplani/agent-deck/main/install.sh | bash
+ curl -fsSL https://raw.githubusercontent.com/Krudony/Krudonagent-deck/main/install.sh | bash
+
+  หรือติดตั้ง binary ตรงๆ:
+  sudo cp /home/krudony/agent-deck-src/agent-deck /usr/local/bin/
 ```
 
 The installer downloads the binary, installs tmux if needed, and configures tmux for mouse/clipboard support.
