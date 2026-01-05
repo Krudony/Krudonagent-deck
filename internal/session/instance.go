@@ -258,11 +258,10 @@ func (i *Instance) buildGeminiCommand(baseCommand string) string {
 			return fmt.Sprintf("gemini --resume %s", i.GeminiSessionID)
 		}
 
-		// New session - capture session ID for future resume (like Claude does)
-		// This ensures when pressing R, it resumes the same session instead of creating new one
-		return "session_id=$(gemini --output-format json 2>/dev/null | jq -r '.session_id') && " +
-			"tmux set-environment GEMINI_SESSION_ID \"$session_id\" && " +
-			"gemini --resume \"$session_id\""
+		// New session - start gemini normally
+		// Agent-deck will detect session ID from ~/.gemini files via UpdateGeminiSession
+		// Then R key will resume using that detected ID
+		return "gemini"
 	}
 
 	// For custom commands (e.g., resume commands), return as-is

@@ -570,23 +570,14 @@ func TestInstance_UpdateGeminiSession(t *testing.T) {
 func TestBuildGeminiCommand(t *testing.T) {
 	inst := NewInstanceWithTool("test", "/tmp/test", "gemini")
 
-	// Without session ID, should return capture-resume pattern
+	// Without session ID, should return plain "gemini" command
+	// Session ID detection happens via UpdateGeminiSession from ~/.gemini files
 	cmd := inst.buildGeminiCommand("gemini")
-
-	// Should contain json output format and session ID capture
-	// NOTE: We use --output-format json (not stream-json) to let Gemini complete
-	// and save the session before extracting session_id
-	if !strings.Contains(cmd, "--output-format json") {
-		t.Error("Should use json output format for session ID capture")
-	}
-	if !strings.Contains(cmd, "GEMINI_SESSION_ID") {
-		t.Error("Should set GEMINI_SESSION_ID in tmux environment")
-	}
-	if !strings.Contains(cmd, "--resume") {
-		t.Error("Should resume captured session")
+	if cmd != "gemini" {
+		t.Errorf("buildGeminiCommand('gemini') without session ID = %q, want %q", cmd, "gemini")
 	}
 
-	// With session ID, should use simple resume
+	// With session ID, should use resume
 	inst.GeminiSessionID = "abc-123-def"
 	cmd = inst.buildGeminiCommand("gemini")
 	expected := "gemini --resume abc-123-def"
