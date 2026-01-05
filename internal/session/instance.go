@@ -258,18 +258,16 @@ func (i *Instance) buildGeminiCommand(baseCommand string) string {
 			return fmt.Sprintf("gemini --resume %s", i.GeminiSessionID)
 		}
 
-		// Build the capture-resume command for new sessions
-		// This command:
-		// 1. Runs Gemini with a minimal prompt "." to completion (saves session to disk)
-		// 2. Extracts session_id from the JSON output
-		// 3. Stores session ID in tmux environment (for retrieval by agent-deck)
-		// 4. Resumes that session interactively
-		// NOTE: Using --output-format json (not stream-json with head -1) because:
-		// - head -1 sends SIGPIPE which kills Gemini before it saves the session
-		// - json mode runs to completion, ensuring session file is written
-		return `session_id=$(gemini --output-format json "." 2>/dev/null | jq -r '.session_id') && ` +
-			`tmux set-environment GEMINI_SESSION_ID "$session_id" && ` +
-			`gemini --resume "$session_id"`
+		// Try to find the most recent session from files
+		sessions, err := ListGeminiSessions(i.ProjectPath)
+		if err == nil && len(sessions) > 0 {
+			// Found existing session, resume it
+			i.GeminiSessionID = sessions[0].SessionID
+			return fmt.Sprintf("gemini --resume %s", sessions[0].SessionID)
+		}
+
+		// No existing session, run gemini to create new one
+		return "gemini"
 	}
 
 	// For custom commands (e.g., resume commands), return as-is
