@@ -201,19 +201,20 @@ func (i *Instance) buildClaudeCommandWithMessage(baseCommand, message string) st
 	// 4. Optionally waits for prompt and sends initial message
 	if baseCommand == "claude" {
 		var baseCmd string
+		// Build command with fallback: try session capture, but start Claude anyway if capture fails
+		// This handles cases where: Claude isn't authenticated, jq isn't installed, JSON parse fails
+		// Fallback ensures Claude starts (without fork/restart support) rather than failing completely
+		dangerousFlag := ""
 		if dangerousMode {
-			baseCmd = fmt.Sprintf(
-				`session_id=$(CLAUDE_CONFIG_DIR=%s claude -p "." --output-format json 2>/dev/null | jq -r '.session_id') && `+
-					`tmux set-environment CLAUDE_SESSION_ID "$session_id" && `+
-					`CLAUDE_CONFIG_DIR=%s claude --resume "$session_id" --dangerously-skip-permissions`,
-				configDir, configDir)
-		} else {
-			baseCmd = fmt.Sprintf(
-				`session_id=$(CLAUDE_CONFIG_DIR=%s claude -p "." --output-format json 2>/dev/null | jq -r '.session_id') && `+
-					`tmux set-environment CLAUDE_SESSION_ID "$session_id" && `+
-					`CLAUDE_CONFIG_DIR=%s claude --resume "$session_id"`,
-				configDir, configDir)
+			dangerousFlag = " --dangerously-skip-permissions"
 		}
+		baseCmd = fmt.Sprintf(
+			`session_id=$(CLAUDE_CONFIG_DIR=%s claude -p "." --output-format json 2>/dev/null | jq -r '.session_id' 2>/dev/null) || session_id=""; `+
+				`if [ -n "$session_id" ] && [ "$session_id" != "null" ]; then `+
+				`tmux set-environment CLAUDE_SESSION_ID "$session_id"; `+
+				`CLAUDE_CONFIG_DIR=%s claude --resume "$session_id"%s; `+
+				`else CLAUDE_CONFIG_DIR=%s claude%s; fi`,
+			configDir, configDir, dangerousFlag, configDir, dangerousFlag)
 
 		// If message provided, append wait-and-send logic
 		if message != "" {
@@ -223,17 +224,15 @@ func (i *Instance) buildClaudeCommandWithMessage(baseCommand, message string) st
 			// Run wait-and-send in background, keep Claude in foreground
 			// The wait loop runs in a subshell that polls for ">" prompt (Claude's input prompt)
 			// Once detected, sends the message via tmux send-keys (text + Enter separately)
+			// Note: wait-and-send works regardless of session capture (Claude shows ">" prompt either way)
 			baseCmd = fmt.Sprintf(
-				`session_id=$(CLAUDE_CONFIG_DIR=%s claude -p "." --output-format json 2>/dev/null | jq -r '.session_id') && `+
-					`tmux set-environment CLAUDE_SESSION_ID "$session_id" && `+
+				`session_id=$(CLAUDE_CONFIG_DIR=%s claude -p "." --output-format json 2>/dev/null | jq -r '.session_id' 2>/dev/null) || session_id=""; `+
 					`(sleep 2; SESSION_NAME=$(tmux display-message -p '#S'); while ! tmux capture-pane -p -t "$SESSION_NAME" | tail -5 | grep -qE "^>"; do sleep 0.2; done; tmux send-keys -l -t "$SESSION_NAME" '%s'; tmux send-keys -t "$SESSION_NAME" Enter) & `+
-					`CLAUDE_CONFIG_DIR=%s claude --resume "$session_id"%s`,
-				configDir, escapedMsg, configDir, func() string {
-					if dangerousMode {
-						return " --dangerously-skip-permissions"
-					}
-					return ""
-				}())
+					`if [ -n "$session_id" ] && [ "$session_id" != "null" ]; then `+
+					`tmux set-environment CLAUDE_SESSION_ID "$session_id"; `+
+					`CLAUDE_CONFIG_DIR=%s claude --resume "$session_id"%s; `+
+					`else CLAUDE_CONFIG_DIR=%s claude%s; fi`,
+				configDir, escapedMsg, configDir, dangerousFlag, configDir, dangerousFlag)
 		}
 
 		return baseCmd
@@ -1004,7 +1003,7 @@ func (i *Instance) Kill() error {
 	return nil
 }
 
-// Restart restarts the session
+// Restart restarts the Claude session
 // For Claude/Gemini sessions with known ID: uses respawn-pane with resume command
 // For dead sessions or unknown ID: recreates the tmux session
 func (i *Instance) Restart() error {
@@ -1171,15 +1170,30 @@ func (i *Instance) Fork(newTitle, newGroupPath string) (string, error) {
 	workDir := i.ProjectPath
 	configDir := GetClaudeConfigDir()
 
+	// Check dangerous mode from user config (same logic as buildClaudeResumeCommand)
+	dangerousMode := false
+	if userConfig, err := LoadUserConfig(); err == nil && userConfig != nil {
+		dangerousMode = userConfig.Claude.DangerousMode
+	}
+
+	// Build dangerous mode flag
+	dangerousFlag := ""
+	if dangerousMode {
+		dangerousFlag = " --dangerously-skip-permissions"
+	}
+
 	// Capture-resume pattern for fork:
 	// 1. Fork in print mode to get new session ID
-	// 2. Store in tmux environment
+	// 2. Store in tmux environment (if capture succeeded)
 	// 3. Resume the forked session interactively
+	// Note: Path is single-quoted to handle spaces and special characters
+	// Note: We add jq stderr suppression and validation, but fail if capture fails entirely
 	cmd := fmt.Sprintf(
-		`cd %s && session_id=$(CLAUDE_CONFIG_DIR=%s claude -p "." --output-format json --resume %s --fork-session 2>/dev/null | jq -r '.session_id') && `+
+		`cd '%s' && session_id=$(CLAUDE_CONFIG_DIR=%s claude -p "." --output-format json --resume %s --fork-session 2>/dev/null | jq -r '.session_id' 2>/dev/null); `+
+			`if [ -z "$session_id" ] || [ "$session_id" = "null" ]; then echo "Fork failed: could not capture session ID. Check if Claude CLI is authenticated and jq is installed."; exit 1; fi; `+
 			`tmux set-environment CLAUDE_SESSION_ID "$session_id" && `+
-			`CLAUDE_CONFIG_DIR=%s claude --resume "$session_id" --dangerously-skip-permissions`,
-		workDir, configDir, i.ClaudeSessionID, configDir)
+			`CLAUDE_CONFIG_DIR=%s claude --resume "$session_id"%s`,
+		workDir, configDir, i.ClaudeSessionID, configDir, dangerousFlag)
 
 	return cmd, nil
 }
