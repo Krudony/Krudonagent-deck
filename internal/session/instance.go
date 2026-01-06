@@ -527,17 +527,10 @@ func (i *Instance) UpdateGeminiSession(excludeIDs map[string]bool) {
 		return
 	}
 
-	// If we already have a session ID, check if tmux env confirms it
-	if i.GeminiSessionID != "" {
-		// Only update timestamp if we can confirm from tmux env
-		// (prevents timestamp change when tmux session doesn't exist)
-		if i.tmuxSession != nil && i.tmuxSession.Exists() {
-			if envID, err := i.tmuxSession.GetEnvironment("GEMINI_SESSION_ID"); err == nil && envID == i.GeminiSessionID {
-				i.GeminiDetectedAt = time.Now()
-			}
-		}
-		return
-	}
+	// Always scan for the most recent session to handle cases where:
+	// - User started a new session but we still have old ID
+	// - Session ID changed but tmux env wasn't updated
+	// This ensures we always use the CURRENT session
 
 	// Scan for most recent session from files
 	sessions, err := ListGeminiSessions(i.ProjectPath)
