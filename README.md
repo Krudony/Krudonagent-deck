@@ -3,19 +3,37 @@
 <!-- Status Grid Logo -->
 <img src="site/logo.svg" alt="Agent Deck Logo" width="120">
 
-# Agent Deck
+# Krudonagent-deck
 
-**Your AI agent command center**
+**Your AI agent command center** • Enhanced fork with performance & stability improvements
 
-[![GitHub Stars](https://img.shields.io/github/stars/asheshgoplani/agent-deck?style=for-the-badge&logo=github&color=yellow&labelColor=1a1b26)](https://github.com/asheshgoplani/agent-deck/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/Krudony/Krudonagent-deck?style=for-the-badge&logo=github&color=yellow&labelColor=1a1b26)](https://github.com/Krudony/Krudonagent-deck/stargazers)
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go&labelColor=1a1b26)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-9ece6a?style=for-the-badge&labelColor=1a1b26)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20WSL-7aa2f7?style=for-the-badge&labelColor=1a1b26)](https://github.com/asheshgoplani/agent-deck)
-[![Latest Release](https://img.shields.io/github/v/release/asheshgoplani/agent-deck?style=for-the-badge&color=e0af68&labelColor=1a1b26)](https://github.com/asheshgoplani/agent-deck/releases)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20WSL-7aa2f7?style=for-the-badge&labelColor=1a1b26)](https://github.com/Krudony/Krudonagent-deck)
+[![Latest Release](https://img.shields.io/github/v/release/Krudony/Krudonagent-deck?style=for-the-badge&color=e0af68&labelColor=1a1b26)](https://github.com/Krudony/Krudonagent-deck/releases)
 
-[Features](#features) • [Installation](#installation) • [Usage](#usage) • [CLI Commands](#cli-commands) • [Documentation](#documentation)
+> 🚀 **Enhanced Fork Features:**
+> - ⚡ Claude dangerous mode enabled by default (no permission prompts)
+> - 🔧 Gemini session detection from files (no broken JSON capture)
+> - 🎨 Performance improvements (cached styles, debounced navigation)
+> - 🐛 Bug fixes (data race, path quoting, session capture fallback)
+
+[Features](#features) • [Quick Install](#quick-install) • [Installation](#installation) • [Usage](#usage) • [CLI Commands](#cli-commands) • [Documentation](#documentation)
 
 </div>
+
+---
+
+## Quick Install
+
+**One-line install:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Krudony/Krudonagent-deck/main/install.sh | bash
+```
+
+Then run: `agent-deck`
 
 ---
 
