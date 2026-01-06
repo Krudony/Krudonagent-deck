@@ -825,9 +825,10 @@ func TestInstance_Fork_RespectsDangerousMode(t *testing.T) {
 	t.Run("dangerous_mode=false", func(t *testing.T) {
 		// Set up config with dangerous_mode = false
 		userConfigCacheMu.Lock()
+		falseBool := false
 		userConfigCache = &UserConfig{
 			Claude: ClaudeSettings{
-				DangerousMode: false,
+				DangerousMode: &falseBool,
 			},
 		}
 		userConfigCacheMu.Unlock()
@@ -852,9 +853,10 @@ func TestInstance_Fork_RespectsDangerousMode(t *testing.T) {
 	t.Run("dangerous_mode=true", func(t *testing.T) {
 		// Set up config with dangerous_mode = true
 		userConfigCacheMu.Lock()
+		trueBool := true
 		userConfigCache = &UserConfig{
 			Claude: ClaudeSettings{
-				DangerousMode: true,
+				DangerousMode: &trueBool,
 			},
 		}
 		userConfigCacheMu.Unlock()

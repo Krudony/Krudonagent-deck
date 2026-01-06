@@ -188,9 +188,9 @@ func (i *Instance) buildClaudeCommandWithMessage(baseCommand, message string) st
 	// Check if dangerous mode is enabled in user config
 	// Default to true (always use --dangerously-skip-permissions)
 	dangerousMode := true
-	if userConfig, err := LoadUserConfig(); err == nil && userConfig != nil && !userConfig.Claude.DangerousMode {
-		// Only set to false if user explicitly disabled it
-		dangerousMode = userConfig.Claude.DangerousMode
+	if userConfig, err := LoadUserConfig(); err == nil && userConfig != nil && userConfig.Claude.DangerousMode != nil {
+		// Use explicit value from config (nil = use default true)
+		dangerousMode = *userConfig.Claude.DangerousMode
 	}
 
 	// If baseCommand is just "claude", build the capture-resume command
@@ -1110,9 +1110,9 @@ func (i *Instance) buildClaudeResumeCommand() string {
 	// Check if dangerous mode is enabled in user config
 	// Default to true (always use --dangerously-skip-permissions)
 	dangerousMode := true
-	if userConfig, err := LoadUserConfig(); err == nil && userConfig != nil && !userConfig.Claude.DangerousMode {
-		// Only set to false if user explicitly disabled it
-		dangerousMode = userConfig.Claude.DangerousMode
+	if userConfig, err := LoadUserConfig(); err == nil && userConfig != nil && userConfig.Claude.DangerousMode != nil {
+		// Use explicit value from config (nil = use default true)
+		dangerousMode = *userConfig.Claude.DangerousMode
 	}
 
 	// Build the command with tmux environment update
@@ -1171,9 +1171,9 @@ func (i *Instance) Fork(newTitle, newGroupPath string) (string, error) {
 	configDir := GetClaudeConfigDir()
 
 	// Check dangerous mode from user config (same logic as buildClaudeResumeCommand)
-	dangerousMode := false
-	if userConfig, err := LoadUserConfig(); err == nil && userConfig != nil {
-		dangerousMode = userConfig.Claude.DangerousMode
+	dangerousMode := true
+	if userConfig, err := LoadUserConfig(); err == nil && userConfig != nil && userConfig.Claude.DangerousMode != nil {
+		dangerousMode = *userConfig.Claude.DangerousMode
 	}
 
 	// Build dangerous mode flag
