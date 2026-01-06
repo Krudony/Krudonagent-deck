@@ -51,6 +51,10 @@ type Instance struct {
 	GeminiSessionID  string    `json:"gemini_session_id,omitempty"`
 	GeminiDetectedAt time.Time `json:"gemini_detected_at,omitempty"`
 
+	// Codex CLI integration
+	CodexSessionID  string    `json:"codex_session_id,omitempty"`
+	CodexDetectedAt time.Time `json:"codex_detected_at,omitempty"`
+
 	// MCP tracking - which MCPs were loaded when session started/restarted
 	// Used to detect pending MCPs (added after session start) and stale MCPs (removed but still running)
 	LoadedMCPNames []string `json:"loaded_mcp_names,omitempty"`
@@ -494,6 +498,11 @@ func (i *Instance) UpdateStatus() error {
 		i.UpdateGeminiSession(nil)
 	}
 
+	// Update Codex session tracking (non-blocking, best-effort)
+	if i.Tool == "codex" {
+		i.UpdateCodexSession(nil)
+	}
+
 	return nil
 }
 
@@ -546,6 +555,31 @@ func (i *Instance) UpdateGeminiSession(excludeIDs map[string]bool) {
 		}
 		i.GeminiSessionID = sess.SessionID
 		i.GeminiDetectedAt = time.Now()
+		return
+	}
+}
+
+// UpdateCodexSession updates the Codex session ID from files.
+// Scans ~/.codex/sessions/ for the most recent session file.
+func (i *Instance) UpdateCodexSession(excludeIDs map[string]bool) {
+	if i.Tool != "codex" {
+		return
+	}
+
+	// Always scan for the most recent session
+	sessions, err := ListCodexSessions()
+	if err != nil || len(sessions) == 0 {
+		return
+	}
+
+	// Use the most recent session (already sorted by LastUpdated)
+	for _, sess := range sessions {
+		// Skip excluded IDs
+		if excludeIDs != nil && excludeIDs[sess.SessionID] {
+			continue
+		}
+		i.CodexSessionID = sess.SessionID
+		i.CodexDetectedAt = time.Now()
 		return
 	}
 }
@@ -1024,6 +1058,21 @@ func (i *Instance) Restart() error {
 		return nil
 	}
 
+	// If Codex session with known ID AND tmux session exists, use respawn-pane
+	if i.Tool == "codex" && i.CodexSessionID != "" && i.tmuxSession != nil && i.tmuxSession.Exists() {
+		resumeCmd := fmt.Sprintf("codex resume %s", i.CodexSessionID)
+		log.Printf("[MCP-DEBUG] Codex respawn-pane with command: %s", resumeCmd)
+
+		if err := i.tmuxSession.RespawnPane(resumeCmd); err != nil {
+			log.Printf("[MCP-DEBUG] Codex RespawnPane failed: %v", err)
+			return fmt.Errorf("failed to restart Codex session: %w", err)
+		}
+
+		log.Printf("[MCP-DEBUG] Codex RespawnPane succeeded")
+		i.Status = StatusWaiting
+		return nil
+	}
+
 	// If Claude session with known ID AND tmux session exists, use respawn-pane
 	if i.Tool == "claude" && i.ClaudeSessionID != "" && i.tmuxSession != nil && i.tmuxSession.Exists() {
 		// Build the resume command with proper config
@@ -1060,6 +1109,10 @@ func (i *Instance) Restart() error {
 		// Set GEMINI_SESSION_ID in tmux env so detection works after restart
 		command = fmt.Sprintf("tmux set-environment GEMINI_SESSION_ID %s && gemini --resume %s",
 			i.GeminiSessionID, i.GeminiSessionID)
+	} else if i.Tool == "codex" && i.CodexSessionID != "" {
+		// Set CODEX_SESSION_ID in tmux env so detection works after restart
+		command = fmt.Sprintf("tmux set-environment CODEX_SESSION_ID %s && codex resume %s",
+			i.CodexSessionID, i.CodexSessionID)
 	} else {
 		// Route to appropriate command builder based on tool
 		switch i.Tool {
@@ -1122,6 +1175,7 @@ func (i *Instance) buildClaudeResumeCommand() string {
 // CanRestart returns true if the session can be restarted
 // For Claude sessions with known ID: can always restart (interrupt and resume)
 // For Gemini sessions with known ID: can always restart (interrupt and resume)
+// For Codex sessions with known ID: can always restart (interrupt and resume)
 // For other sessions: only if dead/error state
 func (i *Instance) CanRestart() bool {
 	// Gemini sessions with known session ID can always be restarted
@@ -1131,6 +1185,11 @@ func (i *Instance) CanRestart() bool {
 
 	// Claude sessions with known session ID can always be restarted
 	if i.Tool == "claude" && i.ClaudeSessionID != "" {
+		return true
+	}
+
+	// Codex sessions with known session ID can always be restarted
+	if i.Tool == "codex" && i.CodexSessionID != "" {
 		return true
 	}
 
